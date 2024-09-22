@@ -22,11 +22,11 @@ class CreateRlsFunctions < <%= activerecord_migration_class %>
       CREATE FUNCTION rls_disabled() RETURNS BOOLEAN AS $BODY$
         BEGIN
           -- Raise an error of RLS is not set up
-          IF current_tenant_id()::BIGINT IS NULL AND current_setting('rls.disable', TRUE)::BOOLEAN IS NOT TRUE THEN
-            RAISE EXCEPTION 'RLS not set up!' USING HINT = 'Please set rls.tenant_id or set rls.disable to FALSE.';
+          IF current_tenant_id()::BIGINT IS NULL AND NULLIF(current_setting('rls.disable', TRUE), '')::BOOLEAN IS NOT TRUE THEN
+            RAISE EXCEPTION 'RLS not set up!' USING HINT = 'Please set rls.tenant_id or set rls.disable to TRUE.';
           END IF;
   
-          RETURN COALESCE(current_setting('rls.disable', TRUE)::BOOLEAN, FALSE);
+          RETURN COALESCE(NULLIF(current_setting('rls.disable', TRUE), '')::BOOLEAN, FALSE);
         END
       $BODY$ LANGUAGE plpgsql SECURITY DEFINER STABLE COST 12;
     SQL
@@ -34,8 +34,9 @@ class CreateRlsFunctions < <%= activerecord_migration_class %>
 
   def self.down
     connection.execute <<-SQL
-      DROP FUNCTION IF EXISTS current_tenant_id CASCADE;
       DROP FUNCTION IF EXISTS rls_disabled CASCADE;
+      DROP FUNCTION IF EXISTS current_tenant_id CASCADE;
+      DROP FUNCTION IF EXISTS current_user_id CASCADE;
      SQL
   end
 end
