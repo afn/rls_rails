@@ -44,7 +44,7 @@ end
   no_tasks do
     def version
       dir_path = policy_path
-      if Dir.exists? dir_path
+      if Dir.exist? dir_path
         Dir.entries(dir_path).reject{|f| File.directory? f }.map{|n| n[-5..-4].to_i}.max || 0
       else
         0

@@ -23,7 +23,7 @@ namespace :rls_rails do
 
   def save_policies table, policies
     dir_path = policy_path(table)
-    Dir.mkdir(dir_path) unless Dir.exists? dir_path
+    Dir.mkdir(dir_path) unless Dir.exist? dir_path
     path = policy_path(table, 1)
     puts "Init policy #{path}"
 
