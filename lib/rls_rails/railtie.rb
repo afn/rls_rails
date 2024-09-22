@@ -17,8 +17,7 @@ module RLS
     initializer "rls_rails.load" do
       ActiveSupport.on_load :active_record do
         ActiveRecord::Migration.include RLS::Statements
-        #ActiveRecord::Migration::CommandRecorder.include Scenic::CommandRecorder
-        #ActiveRecord::SchemaDumper.prepend Scenic::SchemaDumper
+        ActiveRecord::SchemaDumper.prepend RLS::SchemaDumper
       end
     end
 

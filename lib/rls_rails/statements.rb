@@ -16,9 +16,20 @@ module RLS
       end
     end
 
-    def create_policy table, version: 1
+    def create_policy table, version: nil, sql_definition: nil
+      if version.present? && sql_definition.present?
+        raise(
+          ArgumentError,
+          "sql_definition and version cannot both be set"
+        )
+      end
+
+      if version.blank? && sql_definition.blank?
+        version = 1
+      end
+
       reversible do |dir|
-        dir.up   { do_create_policy table, version: version }
+        dir.up   { do_create_policy table, version: version, sql_definition: sql_definition }
         dir.down { do_drop_policy   table, version: version }
       end
     end
@@ -61,11 +72,15 @@ module RLS
       end
     end
 
-    def do_create_policy table, version: nil
+    def do_create_policy table, version: nil, sql_definition: nil
       RLS.clear_policies!
       enable_rls table, force: true
-      load policy_path(table, version)
-      perform_query RLS.create_sql(table)
+      sql_definition ||= begin
+        load policy_path(table, version)
+        RLS.create_sql(table)
+      end
+
+      perform_query sql_definition
     end
 
     def do_drop_policy table, version: nil
