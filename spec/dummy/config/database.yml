@@ -10,5 +10,10 @@ development: &default
   <% end %>
 
 test:
-  <<: *default
-  database: dummy_test
+  primary:
+    <<: *default
+    database: dummy_test
+  secondary:
+    <<: *default
+    database: dummy_test
+    replica: true

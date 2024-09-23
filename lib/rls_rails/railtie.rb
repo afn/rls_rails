@@ -18,6 +18,9 @@ module RLS
       ActiveSupport.on_load :active_record do
         ActiveRecord::Migration.include RLS::Statements
         ActiveRecord::SchemaDumper.prepend RLS::SchemaDumper
+        ActiveRecord::ConnectionAdapters::AbstractAdapter.set_callback(:checkout, :after) do |connection|
+          RLS.checked_out(connection)
+        end
       end
     end
 

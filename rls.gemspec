@@ -28,7 +28,7 @@ Gem::Specification.new do |spec|
 
   spec.add_dependency "rails", "> 5"
 
-  spec.add_development_dependency "postgresql"
+  spec.add_development_dependency "pg"
   spec.add_development_dependency "activerecord", "> 3"
   spec.add_development_dependency "rspec"
 end

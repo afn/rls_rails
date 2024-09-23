@@ -2,184 +2,177 @@ require 'spec_helper'
 
 RSpec.describe RLS do
   before(:each) do
-    RLS.reset!
     ActiveRecord::Base.connection.enable_query_cache!
   end
 
-  describe '.set_tenant_for_block' do
-    it 'works for threads' do
-      RLS.enable!
-      expect(RLS.enabled?).to be_truthy
+  def current_state
+    result = ActiveRecord::Base.connection.execute <<-SQL
+      SELECT current_setting('rls.tenant_id', TRUE) as tenant_id,
+             current_setting('rls.user_id',   TRUE) as user_id,
+             current_setting('rls.disable',   TRUE) as disable;
+    SQL
 
-      Thread.new do
-        RLS.disable!
-        expect(RLS.disabled?).to be_truthy
-      end.run
+    result.first.symbolize_keys
+  end
 
-      expect(RLS.enabled?).to be_truthy
-
-      RLS.disable_for_block do
-        expect(RLS.enabled?).to be_falsey
-      end
-    end
-
-    context 'rls was unset' do
-      it 'is unset before' do
-        expect(RLS.current_tenant_id).to eq nil
-      end
-
-      it 'sets tenant_id within block' do
-        client = User.create name: 'A'
-        RLS.set_tenant_for_block(client) do
-          expect(RLS.current_tenant_id).to eq client.id.to_s
+  describe '.with' do
+    context 'setting rls_disabled' do
+      it 'sets the state within the block' do
+        RLS.with(rls_disabled: true) do
+          expect(current_state).to eq disable: 'TRUE', user_id: '', tenant_id: ''
         end
       end
 
-      it 'is unset afterwards' do
-        client = User.create name: 'User A'
-        RLS.set_tenant_for_block(client) {}
-        expect(RLS.current_tenant_id).to eq nil
+      it 'resets the state after exiting the block' do
+        RLS.with(rls_disabled: true) do
+          # noop
+        end
+
+        expect(current_state).to eq disable: 'FALSE', user_id: '', tenant_id: ''
       end
     end
 
-    context 'rls was set' do
-      let!(:client) {User.create name: 'User A'}
-      before { RLS.set_tenant client }
-
-      it 'is set before' do
-        expect(RLS.current_tenant_id).to eq client.id.to_s
+    context 'setting user_id and tenant_id' do
+      it 'sets the values within the block' do
+        RLS.with(user: User.new(id: 1), tenant: Tenant.new(id: 2)) do
+          expect(current_state).to eq disable: 'FALSE', user_id: '1', tenant_id: '2'
+        end
       end
 
-      it 'sets tenant_id within block' do
-        RLS.set_tenant_for_block(client) { expect(RLS.current_tenant_id).to eq client.id.to_s }
-      end
+      it 'resets the state after exiting the block' do
+        RLS.with(user: User.new(id: 1), tenant: Tenant.new(id: 2)) do
+          # noop
+        end
 
-      it 'original value is reset afterwards' do
-        RLS.set_tenant_for_block(client) {}
-        expect(RLS.current_tenant_id).to eq client.id.to_s
+        expect(current_state).to eq disable: 'FALSE', user_id: '', tenant_id: ''
       end
     end
 
-    context 'used within an other set_tenant_for_block' do
-      let!(:client1) {User.create name: 'User 1'}
-      let!(:client2) {User.create name: 'User 2'}
-      let!(:client3) {User.create name: 'User 3'}
-
-      it 'sets tenant_id within block' do
-        expect(RLS.current_tenant_id).to eq nil
-
-        RLS.set_tenant_for_block(client1) do
-          expect(RLS.current_tenant_id).to eq client1.id.to_s
-          RLS.set_tenant_for_block(client2) do
-            expect(RLS.current_tenant_id).to eq client2.id.to_s
-            RLS.set_tenant_for_block(client3) do
-              expect(RLS.current_tenant_id).to eq client3.id.to_s
+    context 'nested calls' do
+      it 'resets the state after each nested block exits' do
+        RLS.with(user: User.new(id: 1)) do
+          RLS.with(tenant: Tenant.new(id: 2)) do
+            RLS.with(rls_disabled: true) do
+              expect(current_state).to eq disable: 'TRUE', user_id: '', tenant_id: ''
             end
-            expect(RLS.current_tenant_id).to eq client2.id.to_s
+            expect(current_state).to eq disable: 'FALSE', user_id: '', tenant_id: '2'
           end
-          expect(RLS.current_tenant_id).to eq client1.id.to_s
+          expect(current_state).to eq disable: 'FALSE', user_id: '1', tenant_id: ''
+        end
+        expect(current_state).to eq disable: 'FALSE', user_id: '', tenant_id: ''
+      end
+    end
+
+    context 'when an error is raised' do
+      it 'propagates the error and resets the state' do
+        expect do
+          RLS.with(user: User.new(id: 1)) do
+            raise 'an error'
+          end
+        end.to raise_error 'an error'
+
+        expect(current_state).to eq disable: 'FALSE', user_id: '', tenant_id: ''
+      end
+
+      context 'within a transaction' do
+        it 'resets the current state after the transaction is rolled back' do
+          RLS.with(user: User.new(id: 1)) do
+            ActiveRecord::Base.transaction do
+              RLS.with(user: User.new(id: 2)) do
+                expect do
+                  ActiveRecord::Base.connection.execute 'select * from nonexistent_table'
+                end.to raise_error ActiveRecord::StatementInvalid
+              end
+            end
+            expect(current_state).to eq disable: 'FALSE', user_id: '1', tenant_id: ''
+          end
+
+          expect(current_state).to eq disable: 'FALSE', user_id: '', tenant_id: ''
         end
 
-        expect(RLS.current_tenant_id).to eq nil
-      end
-    end
-  end
+        it 'resets the current state after a savepoint is restored' do
+          RLS.with(user: User.new(id: 1)) do
+            ActiveRecord::Base.transaction do
+              RLS.with(user: User.new(id: 2)) do
+                ActiveRecord::Base.connection.create_savepoint 'savepoint1'
+                expect do
+                  RLS.with(user: User.new(id: 3)) do
+                    ActiveRecord::Base.connection.execute 'select * from nonexistent_table'
+                  end
+                end.to raise_error ActiveRecord::StatementInvalid
+                ActiveRecord::Base.connection.rollback_to_savepoint 'savepoint1'
+                expect(current_state).to eq disable: 'FALSE', user_id: '2', tenant_id: ''
+              end
+            end
+            expect(current_state).to eq disable: 'FALSE', user_id: '1', tenant_id: ''
+          end
 
-  describe '.disable!' do
-    context 'currently disabled' do
-      before { RLS.disable! }
-
-      it 'clears not query cache' do
-        User.count
-        expect{ RLS.disable! }.not_to change { ActiveRecord::Base.connection.query_cache.size }
-      end
-    end
-
-    context 'currently enabled' do
-      before { RLS.enable! }
-
-      it 'clears not query cache' do
-        User.count
-        expect{ RLS.disable! }.to change { ActiveRecord::Base.connection.query_cache.size }.to 0
-      end
-    end
-  end
-
-  describe '.enable!' do
-    context 'currently disabled' do
-      before { RLS.disable! }
-
-      it 'clears not query cache' do
-        User.count
-        expect{ RLS.enable! }.to change { ActiveRecord::Base.connection.query_cache.size }.to 0
+          expect(current_state).to eq disable: 'FALSE', user_id: '', tenant_id: ''
+        end
       end
     end
 
-    context 'currently enabled' do
-      before { RLS.enable! }
+    context 'with multiple database connections' do
+      context 'connection already exists' do
+        it 'propagates RLS state to other connections' do
+          ActiveRecord::Base.connected_to(role: :secondary) do
+            ActiveRecord::Base.connection.execute 'SELECT 1'
+          end
 
-      it 'clears not query cache' do
-        User.count
-        expect{ RLS.enable! }.not_to change { ActiveRecord::Base.connection.query_cache.size }
+          RLS.with(user: User.new(id: 1)) do
+            ActiveRecord::Base.connected_to(role: :secondary) do
+              expect(current_state).to eq disable: 'FALSE', user_id: '1', tenant_id: ''
+            end
+
+            expect(current_state).to eq disable: 'FALSE', user_id: '1', tenant_id: ''
+          end
+        end
+      end
+
+      context 'connection opened inside of RLS.with block' do
+        it 'propagates RLS state to other connections' do
+          RLS.with(user: User.new(id: 1)) do
+            ActiveRecord::Base.connected_to(role: :secondary) do
+              expect(current_state).to eq disable: 'FALSE', user_id: '1', tenant_id: ''
+            end
+            expect(current_state).to eq disable: 'FALSE', user_id: '1', tenant_id: ''
+          end
+        end
       end
     end
-  end
 
-  describe '.restore_status_after_block' do
-    context 'was disabled' do
-      before { RLS.disable! }
+    context 'with multiple threads' do
+      pending 'propagates RLS state to threads' do
+        thread = nil
+        input = Queue.new
+        output = Queue.new
 
-      it 'clears query cache' do
-        User.count
-        expect{ RLS.restore_status_after_block{ RLS.enable! } }.
-            to change { ActiveRecord::Base.connection.query_cache.size }.to 0
+        RLS.with(user: User.new(id: 1)) do
+          thread = Thread.new do
+            input.pop
+            output << current_state
+            input.pop
+            output << current_state
+            input.pop
+            output << current_state
+          end
+          thread.run
+
+          input.push nil
+          expect(output.pop).to eq disable: 'FALSE', user_id: '1', tenant_id: ''
+          RLS.with(user: User.new(id: 2)) do
+            expect(current_state).to eq disable: 'FALSE', user_id: '2', tenant_id: ''
+            input.push nil
+            expect(output.pop).to eq disable: 'FALSE', user_id: '1', tenant_id: ''
+          end
+        end
+
+        expect(current_state).to eq disable: 'FALSE', user_id: '', tenant_id: ''
+        input.push nil
+        expect(output.pop).to eq disable: 'FALSE', user_id: '1', tenant_id: ''
+
+        thread.join
       end
-
-      it 'restores status' do
-        expect{ RLS.restore_status_after_block{ RLS.enable! } }.not_to change { RLS.status }
-      end
-    end
-
-    context 'was enabled' do
-      before { RLS.enable! }
-
-      it 'clears not query cache' do
-        User.count
-        expect{ RLS.restore_status_after_block{ RLS.enable! } }.
-            not_to change { ActiveRecord::Base.connection.query_cache.size }
-      end
-
-      it 'restores status' do
-        expect{ RLS.restore_status_after_block{ RLS.enable! } }.not_to change { RLS.status }
-      end
-    end
-  end
-
-  describe '.current_tenant' do
-    before do
-      RLS.configure do |config|
-        config.tenant_class = Tenant
-      end
-    end
-    let!(:tenant) { Tenant.create! name: "Test Tenant" }
-
-    it 'returns the current tenant of the configured class' do
-      RLS.set_tenant tenant
-      expect(RLS.current_tenant).to eq tenant
-    end
-  end
-
-  describe '.current_user' do
-    before do
-      RLS.configure do |config|
-        config.user_class = User
-      end
-    end
-    let!(:user) { User.create! name: "Test User" }
-
-    it 'returns the current user of the configured class' do
-      RLS.set_user user
-      expect(RLS.current_user).to eq user
     end
   end
 end
