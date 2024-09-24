@@ -21,6 +21,7 @@ module RLS
         ActiveRecord::ConnectionAdapters::AbstractAdapter.set_callback(:checkout, :after) do |connection|
           RLS.checked_out(connection)
         end
+        ActiveRecord::ConnectionAdapters::PostgreSQLAdapter.include RLS::PostgreSQLAdapterExtensions
       end
     end
 

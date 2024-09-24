@@ -1,6 +1,9 @@
 require 'concurrent'
+require 'rls_rails/concurrency'
 
 class RLS::ThreadLocalStack
+  include RLS::Concurrency
+
   def initialize
     @thread_map = Concurrent::Map.new
   end
@@ -14,7 +17,7 @@ class RLS::ThreadLocalStack
     raise RLS::Error, 'Stack is empty' if s.nil? || s.empty?
 
     result = s.pop
-    @thread_map.delete(thread_map_key) if s.empty?
+    @thread_map.delete(current_thread) if s.empty?
     result
   end
 
@@ -23,20 +26,16 @@ class RLS::ThreadLocalStack
   end
 
   def active?
-    @thread_map.key?(thread_map_key)
+    @thread_map.key?(current_thread)
   end
 
   private
 
-  def thread_map_key
-    Thread.current
-  end
-
   def stack(initialize: false)
     @stack = if initialize
-               @thread_map[thread_map_key] ||= []
+               @thread_map[current_thread] ||= []
              else
-               @thread_map[thread_map_key]
+               @thread_map[current_thread]
              end
   end
 end

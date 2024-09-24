@@ -2,18 +2,18 @@ require 'rls_rails/state'
 require 'rls_rails/thread_local_stack'
 
 module RLS
-  @stack = RLS::ThreadLocalStack.new
+  mattr_reader :stack, default: RLS::ThreadLocalStack.new
+  mattr_reader :connection_to_thread, default: Concurrent::Map.new
 
-  # TODO: trash connection if @stack.push, @stack.pop, or activate_configuration! raises an error
-  # TODO: use ActiveRecord::ConnectionAdapters::AbstractAdapter.set_callback(:checkout, :after) to propagate state to subsequent transactions
+  # TODO: trash connection if stack.push, stack.pop, or activate_configuration! raises an error
   def self.with user: nil, tenant: nil, rls_disabled: nil, &block
     state = RLS::State.new(user: user, tenant: tenant, rls_disabled: rls_disabled)
-    @stack.push state
+    stack.push state
     activate_configuration! state
     block.call
   ensure
-    @stack.pop
-    activate_configuration!(@stack.peek || State.new)
+    stack.pop
+    activate_configuration!(stack.peek || State.new)
   end
 
   def self.activate_configuration! state
@@ -46,6 +46,6 @@ module RLS
   end
 
   def self.checked_out connection
-    @stack.peek&.activate_for(connection)
+    stack.peek&.activate_for(connection)
   end
 end

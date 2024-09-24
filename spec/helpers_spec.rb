@@ -141,35 +141,61 @@ RSpec.describe RLS do
       end
     end
 
-    context 'with multiple threads' do
-      pending 'propagates RLS state to threads' do
+    context 'with multiple threads sharing a connection via lock_threads' do
+      around do |example|
+        lock_threads_was = ActiveRecord::Base.connection.pool.instance_variable_get('@lock_thread')
+        ActiveRecord::Base.connection.pool.lock_thread = true
+        example.run
+      ensure
+        ActiveRecord::Base.connection.pool.lock_thread = lock_threads_was
+      end
+
+      it 'keeps RLS state isolated among threads' do
         thread = nil
-        input = Queue.new
+        semaphore = Concurrent::Semaphore.new(0)
         output = Queue.new
 
         RLS.with(user: User.new(id: 1)) do
+          expect(current_state).to eq disable: 'FALSE', user_id: '1', tenant_id: ''
           thread = Thread.new do
-            input.pop
+            semaphore.acquire
             output << current_state
-            input.pop
+            RLS.with(user: User.new(id: 3)) do
+              semaphore.acquire
+              output << current_state
+            end
+            semaphore.acquire
             output << current_state
-            input.pop
+            RLS.with(user: User.new(id: 4)) do
+              semaphore.acquire
+              output << current_state
+              semaphore.acquire
+              output << current_state
+            end
+            semaphore.acquire
             output << current_state
           end
-          thread.run
 
-          input.push nil
-          expect(output.pop).to eq disable: 'FALSE', user_id: '1', tenant_id: ''
+          semaphore.release
+          expect(output.pop).to eq disable: 'FALSE', user_id: '', tenant_id: ''
+          expect(current_state).to eq disable: 'FALSE', user_id: '1', tenant_id: ''
           RLS.with(user: User.new(id: 2)) do
             expect(current_state).to eq disable: 'FALSE', user_id: '2', tenant_id: ''
-            input.push nil
-            expect(output.pop).to eq disable: 'FALSE', user_id: '1', tenant_id: ''
+            semaphore.release
+            expect(output.pop).to eq disable: 'FALSE', user_id: '3', tenant_id: ''
           end
+          expect(current_state).to eq disable: 'FALSE', user_id: '1', tenant_id: ''
+          semaphore.release
+          expect(output.pop).to eq disable: 'FALSE', user_id: '', tenant_id: ''
+          semaphore.release
+          expect(output.pop).to eq disable: 'FALSE', user_id: '4', tenant_id: ''
         end
 
         expect(current_state).to eq disable: 'FALSE', user_id: '', tenant_id: ''
-        input.push nil
-        expect(output.pop).to eq disable: 'FALSE', user_id: '1', tenant_id: ''
+        semaphore.release
+        expect(output.pop).to eq disable: 'FALSE', user_id: '4', tenant_id: ''
+        semaphore.release
+        expect(output.pop).to eq disable: 'FALSE', user_id: '', tenant_id: ''
 
         thread.join
       end

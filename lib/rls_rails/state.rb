@@ -1,4 +1,8 @@
+require 'rls_rails/concurrency'
+
 class RLS::State
+  include RLS::Concurrency
+
   attr_reader :user, :tenant, :rls_disabled
 
   def initialize user: nil, tenant: nil, rls_disabled: nil
@@ -8,6 +12,7 @@ class RLS::State
   end
 
   def activate_for connection
+    RLS.connection_to_thread[connection] = current_thread
     connection.execute to_sql(connection)
   end
 
