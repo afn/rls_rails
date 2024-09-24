@@ -23,7 +23,7 @@ RLS.policies_for :#{plural_name} do
 end
       RUBY
     else
-      copy_file policy_path(version), policy_path(version+1)
+      copy_file policy_path(previous_version), policy_path(version)
     end
   end
 
@@ -42,17 +42,19 @@ end
   end
 
   no_tasks do
-    def version
-      dir_path = policy_path
-      if Dir.exist? dir_path
-        Dir.entries(dir_path).reject{|f| File.directory? f }.map{|n| n[-5..-4].to_i}.max || 0
-      else
-        0
+    def previous_version
+      @previous_version ||= begin
+        dir_path = policy_path
+        if Dir.exist? dir_path
+          Dir.entries(dir_path).reject{|f| File.directory? f }.map{|n| n[-5..-4].to_i}.max || 0
+        else
+          0
+        end
       end
     end
 
-    def previous_version
-      version - 1
+    def version
+      @version ||= destroying? ? previous_version : previous_version.next
     end
 
     def migration_class_name
@@ -77,7 +79,7 @@ end
   end
 
   def creating_new_policy?
-    previous_version <= 0
+    previous_version.zero?
   end
 
   def destroying?
