@@ -26,6 +26,18 @@ module RLS
       end
     end
 
+    console do
+      RLS.unsafe_disable!
+    end
+
+    runner do
+      RLS.unsafe_disable!
+    end
+
+    rake_tasks do
+      RLS.unsafe_disable!
+    end
+
     rake_tasks do
       load 'rls_rails/tasks/init.rake'
       load 'rls_rails/tasks/recreate.rake'
