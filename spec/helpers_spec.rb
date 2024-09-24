@@ -201,4 +201,12 @@ RSpec.describe RLS do
       end
     end
   end
+
+  describe '.disabled' do
+    it 'disables RLS within the block' do
+      RLS.disabled do
+        expect(current_state).to eq disable: 'TRUE', user_id: '', tenant_id: ''
+      end
+    end
+  end
 end

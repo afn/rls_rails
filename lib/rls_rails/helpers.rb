@@ -16,6 +16,10 @@ module RLS
     activate_configuration!(stack.peek || State.new)
   end
 
+  def self.disabled &block
+    with rls_disabled: true, &block
+  end
+
   def self.activate_configuration! state
     connections.each do |connection|
       state.activate_for connection
