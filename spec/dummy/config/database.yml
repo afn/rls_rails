@@ -17,3 +17,11 @@ test:
     <<: *default
     database: dummy_test
     replica: true
+  tertiary:
+    <<: *default
+    database: dummy_test
+    replica: true
+    rls_enabled: false
+  external:
+    adapter: sqlite3
+    database: db/external_database.sqlite3

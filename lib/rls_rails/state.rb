@@ -12,6 +12,8 @@ class RLS::State
   end
 
   def activate_for connection
+    return unless connection.rls_enabled?
+
     RLS.connection_to_thread[connection] = current_thread
     connection.execute to_sql(connection)
   end

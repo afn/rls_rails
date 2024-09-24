@@ -18,6 +18,19 @@ module RLS::PostgreSQLAdapterExtensions
     end
   end
 
+  def initialize(...)
+    super
+    @rls_enabled = self.class.type_cast_config_to_boolean(
+      @config.fetch(:rls_enabled, true)
+    )
+  end
+
+  def rls_enabled?
+    @rls_enabled
+  end
+
+  private
+
   def steal_thread_for_rls!
     @lock.synchronize do
       return if @_inside_steal_thread_for_rls

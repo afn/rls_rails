@@ -1,0 +1,2 @@
+class ExternalThing < ExternalApplicationRecord
+end

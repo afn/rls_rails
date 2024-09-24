@@ -139,6 +139,27 @@ RSpec.describe RLS do
           end
         end
       end
+
+      context 'rls disabled for database' do
+        it 'does not set RLS variables' do
+          RLS.with(user: User.new(id: 1)) do
+            ActiveRecord::Base.connected_to(role: :tertiary) do
+              expect(current_state).to eq disable: nil, user_id: nil, tenant_id: nil
+            end
+          end
+        end
+      end
+
+      context 'database adapter does not support RLS' do
+        it 'does not attempt to set RLS variables' do
+          connection = ExternalThing.connection
+          expect(connection).to receive(:execute).exactly(:once)
+
+          RLS.with(user: User.new(id: 1)) do
+            ExternalThing.connection.execute 'SELECT 1'
+          end
+        end
+      end
     end
 
     context 'with multiple threads sharing a connection via lock_threads' do
