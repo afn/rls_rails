@@ -16,7 +16,7 @@ module RLS
       end
     end
 
-    def create_policy table, version: nil, sql_definition: nil
+    def create_policy table, version: nil, sql_definition: nil, force: true
       if version.present? && sql_definition.present?
         raise(
           ArgumentError,
@@ -29,7 +29,7 @@ module RLS
       end
 
       reversible do |dir|
-        dir.up   { do_create_policy table, version: version, sql_definition: sql_definition }
+        dir.up   { do_create_policy table, version: version, sql_definition: sql_definition, force: force }
         dir.down { do_drop_policy   table, version: version }
       end
     end
@@ -63,6 +63,17 @@ module RLS
       end
     end
 
+    def change_policy_force table, force
+      reversible do |dir|
+        dir.up do
+          do_set_force_rls table, force
+        end
+        dir.down do
+          do_set_force_rls table, !force
+        end
+      end
+    end
+
     private
 
     def drop_policies_for table
@@ -72,9 +83,9 @@ module RLS
       end
     end
 
-    def do_create_policy table, version: nil, sql_definition: nil
+    def do_create_policy table, version: nil, sql_definition: nil, force: true
       RLS.clear_policies!
-      enable_rls table, force: true
+      enable_rls table, force: force
       sql_definition ||= begin
         load policy_path(table, version)
         RLS.create_sql(table)
@@ -89,14 +100,34 @@ module RLS
       perform_query RLS.drop_sql(table)
     end
 
-    def do_enable_rls table, force: false
-      q = "ALTER TABLE #{table} ENABLE ROW LEVEL SECURITY#{force ? ', FORCE ROW LEVEL SECURITY' : ''};"
+    def do_alter_table table, enabled: nil, force: nil
+      clauses = []
+      clauses << rls_clause(enabled) unless enabled.nil?
+      clauses << force_clause(force) unless force.nil?
+      return if clauses.empty?
+
+      q = "ALTER TABLE #{table} #{clauses.join(', ')}"
       perform_query q
     end
 
+    def do_enable_rls table, force: false
+      do_alter_table table, enabled: true, force: force
+    end
+
     def do_disable_rls table, force: false
-      q = "ALTER TABLE #{table} DISABLE ROW LEVEL SECURITY#{force ? ', NO FORCE ROW LEVEL SECURITY' : ''};"
-      perform_query q
+      do_alter_table table, enabled: false, force: force
+    end
+
+    def do_set_force_rls table, force
+      do_alter_table table, force: force
+    end
+
+    def rls_clause enabled
+      enabled ? 'ENABLE ROW LEVEL SECURITY' : 'DISABLE ROW LEVEL SECURITY'
+    end
+
+    def force_clause force
+      force ? 'FORCE ROW LEVEL SECURITY' : 'NO FORCE ROW LEVEL SECURITY'
     end
 
     def perform_query q
