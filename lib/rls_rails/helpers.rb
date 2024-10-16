@@ -5,6 +5,8 @@ module RLS
   mattr_reader :stack, default: RLS::ThreadLocalStack.new
   mattr_reader :connection_to_thread, default: Concurrent::Map.new
 
+  LEASE_CONNECTION_METHOD = ActiveRecord.version < '7.2' ? :connection : :lease_connection
+
   # TODO: trash connection if stack.push, stack.pop, or activate_configuration! raises an error
   def self.with user: nil, tenant: nil, rls_disabled: nil, &block
     state = RLS::State.new(user: user, tenant: tenant, rls_disabled: rls_disabled)
@@ -49,7 +51,7 @@ module RLS
   # private
   def self.connections
     all_connection_pools.map do |pool|
-      pool.connection if pool.active_connection?
+      pool.public_send(LEASE_CONNECTION_METHOD) if pool.active_connection?
     end.compact
   end
 

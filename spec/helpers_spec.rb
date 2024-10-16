@@ -164,11 +164,20 @@ RSpec.describe RLS do
 
     context 'with multiple threads sharing a connection via lock_threads' do
       around do |example|
-        lock_threads_was = ActiveRecord::Base.connection.pool.instance_variable_get('@lock_thread')
-        ActiveRecord::Base.connection.pool.lock_thread = true
+        if ActiveRecord.version < '7.2'
+          @lock_threads_was = ActiveRecord::Base.connection.pool.instance_variable_get('@lock_thread')
+          ActiveRecord::Base.connection.pool.lock_thread = true
+        else
+          ActiveRecord::Base.connection.pool.pin_connection!(true)
+        end
+
         example.run
       ensure
-        ActiveRecord::Base.connection.pool.lock_thread = lock_threads_was
+        if ActiveRecord.version < '7.2'
+          ActiveRecord::Base.connection.pool.lock_thread = @lock_threads_was
+        else
+          ActiveRecord::Base.connection.pool.unpin_connection!
+        end
       end
 
       it 'keeps RLS state isolated among threads' do
