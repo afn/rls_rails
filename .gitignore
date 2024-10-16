@@ -42,5 +42,6 @@ yarn-error.log
 /spec/examples.txt
 /aws/function/node_modules/*
 spec/dummy/log/*
+spec/dummy/tmp/*
 spec/dummy/db/external_database.sqlite3
 spec/debug.log
