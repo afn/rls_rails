@@ -16,7 +16,7 @@ module RLS
       end
     end
 
-    def create_policy table, version: nil, sql_definition: nil, force: true
+    def create_policy table, version: nil, sql_definition: nil
       if version.present? && sql_definition.present?
         raise(
           ArgumentError,
@@ -29,7 +29,7 @@ module RLS
       end
 
       reversible do |dir|
-        dir.up   { do_create_policy table, version: version, sql_definition: sql_definition, force: force }
+        dir.up   { do_create_policy table, version: version, sql_definition: sql_definition }
         dir.down { do_drop_policy   table, version: version }
       end
     end
@@ -83,9 +83,8 @@ module RLS
       end
     end
 
-    def do_create_policy table, version: nil, sql_definition: nil, force: true
+    def do_create_policy table, version: nil, sql_definition: nil
       RLS.clear_policies!
-      enable_rls table, force: force
       sql_definition ||= begin
         load policy_path(table, version)
         RLS.create_sql(table)

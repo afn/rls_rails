@@ -29,16 +29,6 @@ describe RLS::Statements do
   end
 
   describe '#create_policy' do
-    it 'enables RLS on the table' do
-      subject.create_policy :users
-      expect(statements).to include 'ALTER TABLE users ENABLE ROW LEVEL SECURITY, FORCE ROW LEVEL SECURITY'
-    end
-
-    it 'enables RLS with NO FORCE ROW LEVEL SECURITY if called with force: false' do
-      subject.create_policy :users, force: false
-      expect(statements).to include 'ALTER TABLE users ENABLE ROW LEVEL SECURITY, NO FORCE ROW LEVEL SECURITY'
-    end
-
     it 'creates a policy from a file' do
       subject.create_policy :users
       expect(statements).to include 'CREATE POLICY my_policy ON users FOR all USING (id = current_user_id())'
@@ -48,16 +38,6 @@ describe RLS::Statements do
       it 'drops the policy' do
         subject.revert { subject.create_policy :users }
         expect(statements).to include 'DROP POLICY IF EXISTS my_policy ON users'
-      end
-
-      it 'drops the policy if called with force: false' do
-        subject.revert { subject.create_policy :users, force: false }
-        expect(statements).to include 'DROP POLICY IF EXISTS my_policy ON users'
-      end
-
-      pending 'disables RLS on the table' do
-        subject.revert { subject.create_policy :users }
-        expect(statements).to include 'ALTER TABLE users DISABLE ROW LEVEL SECURITY, NO FORCE ROW LEVEL SECURITY'
       end
     end
   end

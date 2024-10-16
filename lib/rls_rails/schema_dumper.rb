@@ -6,6 +6,14 @@ module RLS
       ORDER BY schemaname, tablename, policyname;
     SQL
 
+    LIST_RLS_ENABLED_TABLES_SQL = <<~SQL.freeze
+      SELECT nspname AS schemaname, relname AS tablename, relforcerowsecurity AS force
+      FROM pg_class
+      INNER JOIN pg_namespace nsp ON nsp.oid = relnamespace
+      WHERE relrowsecurity
+      ORDER BY nspname, relname;
+    SQL
+
     def tables(stream)
       super
       rls_statements(stream)
@@ -13,6 +21,12 @@ module RLS
 
     def rls_statements(stream)
       # Enable RLS
+      list_rls_enabled_tables.each do |schema, table, force|
+        stream.puts <<-DEFINITION
+  enable_rls #{quoted_table_name(schema, table)}, force: #{force.inspect}
+        DEFINITION
+      end
+
       # Enumerate policies
       list_policies.each do |(schema, table), policies|
         stream.puts <<-DEFINITION
@@ -50,6 +64,10 @@ module RLS
 
     def list_policies
       @connection.execute(LIST_POLICIES_SQL).group_by { |row| [row['schemaname'], row['tablename']] }
+    end
+
+    def list_rls_enabled_tables
+      @connection.execute(LIST_RLS_ENABLED_TABLES_SQL).map { |row| [row['schemaname'], row['tablename'], row['force']] }
     end
   end
 end
